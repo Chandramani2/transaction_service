@@ -9,7 +9,6 @@ from django.http import JsonResponse
 class TransactionCreate(APIView):
     def post(self, request, format=None):
         serializer = TransactionSerializer(data=request.data)
-
         if serializer.is_valid():
             serializer.save()
             return Response({"status": "ok"}, status=status.HTTP_201_CREATED)
@@ -28,12 +27,21 @@ class TransactionType(APIView):
 class TransactionSum(generics.RetrieveAPIView):
     serializer_class = TransactionSerializer
     lookup_field = 'id'
+    
+    def calculate_sum(self, transaction_id):
+        transaction_sum = {}
+        if transaction_id not in transaction_sum:
+            # Get the immediate child transactions and their sums
+            child_transactions = Transaction.objects.filter(parent_id=transaction_id)
+            child_sum = sum(self.calculate_sum(child.id) for child in child_transactions)
+            
+            # Calculate the total sum for this transaction
+            transaction = Transaction.objects.get(id=transaction_id)
+            transaction_sum[transaction_id] = transaction.amount + child_sum
+        
+        return transaction_sum[transaction_id]
 
     def get(self, request, *args, **kwargs):
         transaction_id = kwargs['id']
-        total_amount = Transaction.objects.filter(
-            id=transaction_id
-        ).annotate(
-            sum_amount=Sum('transaction__amount')
-        ).values('sum_amount')[0]
-        return JsonResponse({"sum": total_amount['sum_amount']})
+        total_amount = self.calculate_sum(transaction_id)
+        return JsonResponse({'sum': total_amount})
